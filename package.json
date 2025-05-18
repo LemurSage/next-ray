@@ -1,0 +1,31 @@
+{
+  "name": "webgl-ray-tracer",
+  "version": "0.3.0",
+  "private": true,
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.3.0",
+    "classnames": "^2.5.1",
+    "mtl-file-parser": "^0.3.0",
+    "next": "15.0.2",
+    "obj-file-parser": "^0.6.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-redux": "^9.1.2",
+    "redux": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "15.0.2",
+    "sass": "^1.80.6",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  }
+}
