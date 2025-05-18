@@ -1,13 +1,13 @@
+import Vector1x4 from '@/lib/math/Vector1x4';
+import { appActions, LoadingSpinner } from '@/lib/redux/appSlice';
+import { useAppDispatch, useAppSelector } from '@/lib/redux/hooks';
+import CanvasShader from '@/lib/scene/CanvasShader';
+import ColorTextures from '@/lib/scene/ColorTextures';
+import RandomTexture from '@/lib/scene/RandomTexture';
+import SampleShader from '@/lib/scene/SampleShader';
+import Scene from '@/lib/scene/Scene';
+import { CanvasVars, defaultCanvasVars } from '@/lib/types/CanvasVars';
 import { useCallback, useEffect, useRef } from 'react';
-import Vector1x4 from '../math/Vector1x4';
-import { appActions, LoadingSpinner } from '../redux/appSlice';
-import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import CanvasShader from '../scene/CanvasShader';
-import ColorTextures from '../scene/ColorTextures';
-import RandomTexture from '../scene/RandomTexture';
-import SampleShader from '../scene/SampleShader';
-import Scene from '../scene/Scene';
-import { CanvasVars, defaultCanvasVars } from '../types/CanvasVars';
 
 function degreesToRadians(degrees: number) {
   return (degrees * Math.PI) / 180.0;
