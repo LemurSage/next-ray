@@ -185,8 +185,12 @@ export default class Scene {
   mtlsTexture: WebGLTexture | null = null;
 
   constructor(GL: WebGL2RenderingContext | null, objUrl: string, mtlUrl: string) {
-    this.objUrl = objUrl;
-    this.mtlUrl = mtlUrl;
+    // Check for custom model URLs in localStorage
+    const customObjUrl = typeof window !== 'undefined' ? localStorage.getItem('customObjUrl') : null;
+    const customMtlUrl = typeof window !== 'undefined' ? localStorage.getItem('customMtlUrl') : null;
+
+    this.objUrl = customObjUrl || objUrl;
+    this.mtlUrl = customMtlUrl || mtlUrl;
     this.objCount = 0;
     this.mtlCount = 0;
     this.parsedObjs = [];
@@ -206,6 +210,16 @@ export default class Scene {
   }
 
   async fetchTextFile(url: string): Promise<string> {
+    // Check if the URL is a blob URL (for uploaded files)
+    if (url.startsWith('blob:')) {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Cannot GET ${url} status=${response.status}`);
+      }
+      return response.text();
+    }
+
+    // Regular fetch for default files
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Cannot GET ${url} status=${response.status}`);
@@ -215,124 +229,141 @@ export default class Scene {
 
   async init() {
     if (this.GL) {
-      const _wavefrontObjParser = new wavefrontObjParser(await this.fetchTextFile(this.objUrl));
-      const _wavefrontMtlParser = new wavefrontMtlParser(await this.fetchTextFile(this.mtlUrl));
-      const wavefrontObj = _wavefrontObjParser.parse();
-      const wavefrontMtl = _wavefrontMtlParser.parse();
+      try {
+        const objText = await this.fetchTextFile(this.objUrl);
+        const mtlText = await this.fetchTextFile(this.mtlUrl);
 
-      let posArray: { x: number; y: number; z: number }[] = [];
-      let nrmArray: { x: number; y: number; z: number }[] = [];
+        const _wavefrontObjParser = new wavefrontObjParser(objText);
+        const _wavefrontMtlParser = new wavefrontMtlParser(mtlText);
+        const wavefrontObj = _wavefrontObjParser.parse();
+        const wavefrontMtl = _wavefrontMtlParser.parse();
 
-      this.parsedObjs = wavefrontObj.models.map(({ vertices, vertexNormals, faces }: Model) => {
-        const outFaces: Face[] = [];
-        posArray = posArray.concat(vertices);
-        nrmArray = nrmArray.concat(vertexNormals);
+        let posArray: { x: number; y: number; z: number }[] = [];
+        let nrmArray: { x: number; y: number; z: number }[] = [];
 
-        faces.forEach((f) => {
-          const i0 = f.vertices[0].vertexIndex - 1;
-          const i1 = f.vertices[1].vertexIndex - 1;
-          const i2 = f.vertices[2].vertexIndex - 1;
-          const p0 = new Vector1x4(posArray[i0].x, posArray[i0].y, posArray[i0].z);
-          const p1 = new Vector1x4(posArray[i1].x, posArray[i1].y, posArray[i1].z);
-          const p2 = new Vector1x4(posArray[i2].x, posArray[i2].y, posArray[i2].z);
+        this.parsedObjs = wavefrontObj.models.map(({ vertices, vertexNormals, faces }: Model) => {
+          const outFaces: Face[] = [];
+          posArray = posArray.concat(vertices);
+          nrmArray = nrmArray.concat(vertexNormals);
 
-          const j0 = f.vertices[0].vertexNormalIndex - 1;
-          const j1 = f.vertices[1].vertexNormalIndex - 1;
-          const j2 = f.vertices[2].vertexNormalIndex - 1;
-          const n0 = new Vector1x4(nrmArray[j0].x, nrmArray[j0].y, nrmArray[j0].z);
-          const n1 = new Vector1x4(nrmArray[j1].x, nrmArray[j1].y, nrmArray[j1].z);
-          const n2 = new Vector1x4(nrmArray[j2].x, nrmArray[j2].y, nrmArray[j2].z);
+          faces.forEach((f) => {
+            const i0 = f.vertices[0].vertexIndex - 1;
+            const i1 = f.vertices[1].vertexIndex - 1;
+            const i2 = f.vertices[2].vertexIndex - 1;
+            const p0 = new Vector1x4(posArray[i0].x, posArray[i0].y, posArray[i0].z);
+            const p1 = new Vector1x4(posArray[i1].x, posArray[i1].y, posArray[i1].z);
+            const p2 = new Vector1x4(posArray[i2].x, posArray[i2].y, posArray[i2].z);
 
-          const fn = p1.sub(p0).cross(p2.sub(p0)).normalize(); // face normal
-          const mi = wavefrontMtl.findIndex((m: Mtl) => m.name === f.material); // material index
-          const fi = outFaces.length; // face index
+            const j0 = f.vertices[0].vertexNormalIndex - 1;
+            const j1 = f.vertices[1].vertexNormalIndex - 1;
+            const j2 = f.vertices[2].vertexNormalIndex - 1;
+            const n0 = new Vector1x4(nrmArray[j0].x, nrmArray[j0].y, nrmArray[j0].z);
+            const n1 = new Vector1x4(nrmArray[j1].x, nrmArray[j1].y, nrmArray[j1].z);
+            const n2 = new Vector1x4(nrmArray[j2].x, nrmArray[j2].y, nrmArray[j2].z);
 
-          outFaces.push({
-            p0,
-            p1,
-            p2,
-            n0,
-            n1,
-            n2,
-            fn,
-            mi,
-            fi,
+            const fn = p1.sub(p0).cross(p2.sub(p0)).normalize(); // face normal
+            const mi = wavefrontMtl.findIndex((m: Mtl) => m.name === f.material); // material index
+            const fi = outFaces.length; // face index
+
+            outFaces.push({
+              p0,
+              p1,
+              p2,
+              n0,
+              n1,
+              n2,
+              fn,
+              mi,
+              fi,
+            });
           });
+          const outAABBs = [];
+          const min = new Vector1x4(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+          const max = new Vector1x4(Number.MIN_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Number.MIN_SAFE_INTEGER);
+          outFaces.forEach((f) => {
+            // calculate min/max for root AABB bounding volume
+            min.x = Math.min(min.x, f.p0.x, f.p1.x, f.p2.x);
+            min.y = Math.min(min.y, f.p0.y, f.p1.y, f.p2.y);
+            min.z = Math.min(min.z, f.p0.z, f.p1.z, f.p2.z);
+            max.x = Math.max(max.x, f.p0.x, f.p1.x, f.p2.x);
+            max.y = Math.max(max.y, f.p0.y, f.p1.y, f.p2.y);
+            max.z = Math.max(max.z, f.p0.z, f.p1.z, f.p2.z);
+          });
+
+          if (max.x - min.x < bvMinDelta) {
+            max.x += bvMinDelta;
+          } // don't allow a 2D AABB
+          if (max.y - min.y < bvMinDelta) {
+            max.y += bvMinDelta;
+          }
+          if (max.z - min.z < bvMinDelta) {
+            max.z += bvMinDelta;
+          }
+          const bv = new BV(min, max);
+          outAABBs.push(bv);
+          bv.subDivide(outFaces, outAABBs);
+
+          //console.log(`# faces ${outFaces.length}`);
+          //console.log(`# AABBs ${outAABBs.length}`);
+          return {
+            // a parsed obj containing faces and its corresponding BVH tree
+            faces: outFaces,
+            AABBs: outAABBs,
+          };
         });
-        const outAABBs = [];
-        const min = new Vector1x4(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
-        const max = new Vector1x4(Number.MIN_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Number.MIN_SAFE_INTEGER);
-        outFaces.forEach((f) => {
-          // calculate min/max for root AABB bounding volume
-          min.x = Math.min(min.x, f.p0.x, f.p1.x, f.p2.x);
-          min.y = Math.min(min.y, f.p0.y, f.p1.y, f.p2.y);
-          min.z = Math.min(min.z, f.p0.z, f.p1.z, f.p2.z);
-          max.x = Math.max(max.x, f.p0.x, f.p1.x, f.p2.x);
-          max.y = Math.max(max.y, f.p0.y, f.p1.y, f.p2.y);
-          max.z = Math.max(max.z, f.p0.z, f.p1.z, f.p2.z);
+
+        this.parsedMtls = wavefrontMtl.map((mtl: Mtl) => {
+          const mat = new Material(new Vector1x4(mtl.Kd.red, mtl.Kd.green, mtl.Kd.blue));
+          // 'Metal 0', 0.95, 'Glass 0', 0.00, 1.33
+          switch (mtl.name) {
+            case 'light':
+              mat.mtlCls = EMISSIVE_MATERIAL;
+              mat.albedo.r = 3.0;
+              mat.albedo.g = 3.0;
+              mat.albedo.b = 3.0;
+              break;
+            case 'glass':
+              mat.mtlCls = DIELECTRIC_MATERIAL;
+              mat.refractionIndex = 1.52;
+              mat.albedo.r = 1.0;
+              mat.albedo.g = 1.0;
+              mat.albedo.b = 1.0;
+              break;
+            case 'suzanne':
+              mat.reflectionRatio = 0.5;
+              mat.reflectionGloss = 0.7;
+              break;
+            case 'teapot':
+              mat.reflectionRatio = 0.9;
+              break;
+            case 'ladder':
+              mat.reflectionRatio = 0.3;
+              mat.reflectionGloss = 0.8;
+              break;
+
+            default:
+              // For custom models, apply default material properties
+              mat.reflectionRatio = 0.5;
+              mat.reflectionGloss = 0.7;
+              break;
+          }
+          return mat;
         });
+        //console.log(`# mtls ${this.parsedMtls.length}`);
 
-        if (max.x - min.x < bvMinDelta) {
-          max.x += bvMinDelta;
-        } // don't allow a 2D AABB
-        if (max.y - min.y < bvMinDelta) {
-          max.y += bvMinDelta;
+        this.initTextures(this.GL);
+        this.objCount = this.parsedObjs.length;
+        this.mtlCount = this.parsedMtls.length;
+
+        // Clear localStorage after successful load
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('customObjUrl');
+          localStorage.removeItem('customMtlUrl');
         }
-        if (max.z - min.z < bvMinDelta) {
-          max.z += bvMinDelta;
-        }
-        const bv = new BV(min, max);
-        outAABBs.push(bv);
-        bv.subDivide(outFaces, outAABBs);
-
-        //console.log(`# faces ${outFaces.length}`);
-        //console.log(`# AABBs ${outAABBs.length}`);
-        return {
-          // a parsed obj containing faces and its corresponding BVH tree
-          faces: outFaces,
-          AABBs: outAABBs,
-        };
-      });
-
-      this.parsedMtls = wavefrontMtl.map((mtl: Mtl) => {
-        const mat = new Material(new Vector1x4(mtl.Kd.red, mtl.Kd.green, mtl.Kd.blue));
-        // 'Metal 0', 0.95, 'Glass 0', 0.00, 1.33
-        switch (mtl.name) {
-          case 'light':
-            mat.mtlCls = EMISSIVE_MATERIAL;
-            mat.albedo.r = 3.0;
-            mat.albedo.g = 3.0;
-            mat.albedo.b = 3.0;
-            break;
-          case 'glass':
-            mat.mtlCls = DIELECTRIC_MATERIAL;
-            mat.refractionIndex = 1.52;
-            mat.albedo.r = 1.0;
-            mat.albedo.g = 1.0;
-            mat.albedo.b = 1.0;
-            break;
-          case 'suzanne':
-            mat.reflectionRatio = 0.5;
-            mat.reflectionGloss = 0.7;
-            break;
-          case 'teapot':
-            mat.reflectionRatio = 0.9;
-            break;
-          case 'ladder':
-            mat.reflectionRatio = 0.3;
-            mat.reflectionGloss = 0.8;
-            break;
-
-          default:
-            break;
-        }
-        return mat;
-      });
-      //console.log(`# mtls ${this.parsedMtls.length}`);
-
-      this.initTextures(this.GL);
-      this.objCount = this.parsedObjs.length;
-      this.mtlCount = this.parsedMtls.length;
+      } catch (error) {
+        console.error('Error initializing scene:', error);
+        throw error;
+      }
     }
   }
 

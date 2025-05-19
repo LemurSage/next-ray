@@ -1,13 +1,13 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 export enum LoadingSpinner {
-  show,
-  hide,
-  fail,
+  show = 0,
+  hide = 1,
+  fail = 2,
 }
 export enum ShadingMethod {
-  flat,
-  phong,
+  flat = 0,
+  phong = 1,
 }
 
 interface AppState {

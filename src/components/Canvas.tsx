@@ -1,3 +1,6 @@
+'use client';
+
+import { useCallback, useEffect, useRef } from 'react';
 import Vector1x4 from '@/lib/math/Vector1x4';
 import { appActions, LoadingSpinner } from '@/lib/redux/appSlice';
 import { useAppDispatch, useAppSelector } from '@/lib/redux/hooks';
@@ -6,8 +9,8 @@ import ColorTextures from '@/lib/scene/ColorTextures';
 import RandomTexture from '@/lib/scene/RandomTexture';
 import SampleShader from '@/lib/scene/SampleShader';
 import Scene from '@/lib/scene/Scene';
-import { CanvasVars, defaultCanvasVars } from '@/lib/types/CanvasVars';
-import { useCallback, useEffect, useRef } from 'react';
+import { type CanvasVars, defaultCanvasVars } from '@/lib/types/CanvasVars';
+import { toast } from 'sonner';
 
 function degreesToRadians(degrees: number) {
   return (degrees * Math.PI) / 180.0;
@@ -65,6 +68,68 @@ export default function Canvas() {
     dispatch(appActions.setEtaTime('??:??:??'));
     dispatch(appActions.setAvgTime('????'));
   }, [cv, cameraFov, numSamples, numBounces, shadingMethod, dispatch]);
+
+  // Add this useEffect to listen for the custom event
+
+  useEffect(() => {
+    const handleLoadCustomModel = async (event: Event) => {
+      // Use proper type casting and validation
+      const customEvent = event as CustomEvent<{ objUrl: string; mtlUrl: string }>;
+
+      // Log to debug
+      console.log('Custom model event received:', customEvent);
+
+      if (!customEvent.detail || !customEvent.detail.objUrl) {
+        console.error('Invalid event data', customEvent);
+        toast.error('Missing model data', {
+          description: 'The model information is incomplete or invalid.',
+        });
+        return;
+      }
+
+      const { objUrl, mtlUrl } = customEvent.detail;
+      console.log('Loading model from:', objUrl, mtlUrl);
+
+      try {
+        if (!cv.GL) {
+          throw new Error('WebGL context is not initialized');
+        }
+
+        dispatch(appActions.setLoadingSpinner(LoadingSpinner.show));
+
+        // Create and initialize scene with the uploaded files
+        cv.scene = new Scene(cv.GL, objUrl, mtlUrl);
+        console.log('Scene created, initializing...');
+        await cv.scene.init();
+        console.log('Scene initialized successfully');
+
+        // Reset rendering
+        cv.renderingPass = 0;
+        cv.restartRenderTimestamp = Date.now();
+
+        dispatch(appActions.setRenderingPass(0));
+        dispatch(appActions.setElapsedTime('00:00:00'));
+        dispatch(appActions.setEtaTime('??:??:??'));
+        dispatch(appActions.setAvgTime('????'));
+        dispatch(appActions.setLoadingSpinner(LoadingSpinner.hide));
+
+        toast.success('Custom model loaded successfully');
+      } catch (error) {
+        console.error('Error loading model:', error);
+        dispatch(appActions.setLoadingSpinner(LoadingSpinner.fail));
+        toast.error('Failed to load 3D model', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    };
+
+    // Add event listener with proper typing
+    window.addEventListener('loadCustomModel', handleLoadCustomModel);
+
+    return () => {
+      window.removeEventListener('loadCustomModel', handleLoadCustomModel);
+    };
+  }, [cv, dispatch]);
 
   const canvasCb = useCallback(
     (htmlCanvasElement: HTMLCanvasElement) => {
@@ -196,11 +261,35 @@ export default function Canvas() {
             })
             .then(() => {
               dispatch(appActions.setLoadingSpinner(LoadingSpinner.hide));
+
+              // Check if we loaded a custom model
+              const isCustomModel =
+                typeof window !== 'undefined' &&
+                (localStorage.getItem('customObjUrl') || localStorage.getItem('customMtlUrl'));
+
+              if (isCustomModel) {
+                toast.success('Custom model loaded', {
+                  description: 'Your 3D model has been loaded successfully.',
+                });
+              } else {
+                toast.success('Model loaded', {
+                  description: 'The default 3D model has been loaded successfully.',
+                });
+              }
+
               requestAnimationFrame(render);
             })
-            .catch(() => {
+            .catch((error) => {
+              console.error('Error initializing scene:', error);
               dispatch(appActions.setLoadingSpinner(LoadingSpinner.fail));
+              toast.error('Error', {
+                description: 'Failed to load the model. Please try again.',
+              });
             });
+        } else {
+          toast.error('WebGL Error', {
+            description: 'Your browser or GPU does not support the required WebGL 2 features.',
+          });
         }
       }
     },
@@ -210,7 +299,7 @@ export default function Canvas() {
   return (
     <>
       {loadingSpinner === LoadingSpinner.show && <div className="spinner" />}
-      <canvas ref={canvasCb} width={cv.canvasWd} height={cv.canvasHt}>
+      <canvas ref={canvasCb} width={cv.canvasWd} height={cv.canvasHt} className="rounded-md shadow-md">
         Please use a GPU and browser that supports WebGL 2
       </canvas>
     </>
