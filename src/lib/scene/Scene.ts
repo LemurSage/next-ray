@@ -1,8 +1,8 @@
-import wavefrontMtlParser from 'mtl-file-parser';
 import wavefrontObjParser from 'obj-file-parser';
 import RefFrame from '../math/RefFrame';
 import Vector1x4 from '../math/Vector1x4';
 import Material, { DIELECTRIC_MATERIAL, EMISSIVE_MATERIAL } from './Material';
+import MtlParser from './MtlParser';
 
 enum Axis {
   x = 0,
@@ -231,15 +231,42 @@ export default class Scene {
     if (this.GL) {
       try {
         const objText = await this.fetchTextFile(this.objUrl);
-        const mtlText = await this.fetchTextFile(this.mtlUrl);
+        let mtlText = '';
 
+        try {
+          mtlText = await this.fetchTextFile(this.mtlUrl);
+        } catch (error) {
+          console.warn('Warning: Could not load MTL file, using default materials', error);
+        }
+
+        // Parse OBJ file
         const _wavefrontObjParser = new wavefrontObjParser(objText);
-        const _wavefrontMtlParser = new wavefrontMtlParser(mtlText);
         const wavefrontObj = _wavefrontObjParser.parse();
-        const wavefrontMtl = _wavefrontMtlParser.parse();
 
+        // Try to parse MTL file with our custom robust parser
+        let wavefrontMtl = [];
+        try {
+          // Use our custom MTL parser that handles Ke and other problematic statements
+          const mtlParser = new MtlParser(mtlText);
+          wavefrontMtl = mtlParser.parse();
+          console.log('MTL parsed successfully:', wavefrontMtl);
+        } catch (error) {
+          console.warn('Warning: Error parsing MTL file, using default materials', error);
+          // Create a default material
+          wavefrontMtl = [
+            {
+              name: 'default',
+              Kd: { method: 'rgb', red: 0.8, green: 0.8, blue: 0.8 },
+              Ke: { red: 0, green: 0, blue: 0 },
+            },
+          ];
+        }
+
+        // Continue with the rest of your initialization code...
         let posArray: { x: number; y: number; z: number }[] = [];
         let nrmArray: { x: number; y: number; z: number }[] = [];
+
+        // Rest of your parsing logic...
 
         this.parsedObjs = wavefrontObj.models.map(({ vertices, vertexNormals, faces }: Model) => {
           const outFaces: Face[] = [];

@@ -69,8 +69,6 @@ export default function Canvas() {
     dispatch(appActions.setAvgTime('????'));
   }, [cv, cameraFov, numSamples, numBounces, shadingMethod, dispatch]);
 
-  // Add this useEffect to listen for the custom event
-
   useEffect(() => {
     const handleLoadCustomModel = async (event: Event) => {
       // Use proper type casting and validation
